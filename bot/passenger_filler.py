@@ -278,47 +278,57 @@ class PassengerFiller:
             log.warning("Mobile field not found")
 
     def _handle_auto_upgrade(self):
-        """Tick 'Consider for Auto Upgrade' checkbox using #autoUpgradation ID."""
+        """Tick 'Consider for Auto Upgrade' checkbox using PrimeNG & modern IRCTC selectors."""
         for sel in [
             "#autoUpgradation",
             "//input[@id='autoUpgradation']",
+            "input[formcontrolname='autoUpgradation']",
+            "p-checkbox[formcontrolname='autoUpgradation']",
+            "p-checkbox[formcontrolname='autoUpgradation'] .ui-chkbox-box",
+            "//p-checkbox[contains(.,'Auto Upgrade') or contains(.,'auto upgrade')]",
+            "//label[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'auto upgrade')]/..",
             "//input[@type='checkbox'][contains(@formcontrolname,'autoUpgrade')]",
-            "//label[contains(text(),'Auto Upgrade')]/..//input[@type='checkbox']",
         ]:
             try:
                 el = self.driver.find_element(
                     By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel
                 )
-                if not el.is_selected():
+                if el.is_displayed():
                     _scroll_to(self.driver, el)
                     self.driver.execute_script("arguments[0].click();", el)
-                log.info("Auto Upgrade checkbox ticked")
-                return True
+                    log.info("Auto Upgrade checkbox ticked")
+                    return True
             except Exception:
                 continue
         log.warning("Auto Upgrade checkbox not found")
         return False
 
     def _handle_confirm_berths(self):
-        """Tick 'Book only if confirm berths are allocated' using #confirmberths ID."""
+        """Tick 'Book only if confirm berths are allocated' using PrimeNG & modern IRCTC selectors."""
         for sel in [
             "#confirmberths",
             "//input[@id='confirmberths']",
-            "//input[@type='checkbox'][contains(@formcontrolname,'confirmBerth')]",
-            "//label[contains(text(),'confirm berth')]/..//input[@type='checkbox']",
+            "input[formcontrolname='confirmberths']",
+            "p-checkbox[formcontrolname='confirmberths']",
+            "p-checkbox[formcontrolname='confirmberths'] .ui-chkbox-box",
+            "//p-checkbox[contains(.,'confirm berth') or contains(.,'Confirm berth') or contains(.,'confirm berths')]",
+            "//label[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'confirm berth')]/..",
+            "//label[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'confirm berth')]/preceding-sibling::div",
+            "//label[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'confirm berth')]/..//input",
+            "//input[@type='checkbox'][contains(@formcontrolname,'confirmBerth') or contains(@formcontrolname,'confirmberth')]",
         ]:
             try:
                 el = self.driver.find_element(
                     By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel
                 )
-                if not el.is_selected():
+                if el.is_displayed():
                     _scroll_to(self.driver, el)
                     self.driver.execute_script("arguments[0].click();", el)
-                log.info("Confirm Berths checkbox ticked")
-                return True
+                    log.info("Confirm Berths preference selected")
+                    return True
             except Exception:
                 continue
-        log.warning("Confirm Berths checkbox not found")
+        log.warning("Confirm Berths preference not available for this booking (normal for waitlisted/certain quotas)")
         return False
 
     def _handle_insurance(self, opt_in=False):
