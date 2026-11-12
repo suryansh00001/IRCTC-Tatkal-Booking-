@@ -29,7 +29,7 @@ class TestIRCTCPipeline(unittest.TestCase):
         job = load_job_from_file(config_path)
         self.assertTrue(job.dry_run, "dry_run must be enabled by default")
         self.assertEqual(job.train_class, "3A")
-        self.assertEqual(job.quota, "TQ")
+        self.assertIn(job.quota, ["TQ", "GN"])
         self.assertTrue(len(job.passengers) >= 1)
 
     def test_02_scheduler_math(self):

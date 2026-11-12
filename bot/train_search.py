@@ -2,6 +2,7 @@
 
 import time
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from utils.logger import get_logger
@@ -325,15 +326,13 @@ class TrainSearch:
         d = _find(self.driver, DATE_SELECTORS, timeout=10)
         if d:
             _scroll_to(self.driver, d)
-            self.driver.execute_script("arguments[0].click();", d)
-            time.sleep(0.2)
-            d.clear()
-            self.driver.execute_script(
-                "arguments[0].value = arguments[1];"
-                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
-                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
-                d, travel_date
-            )
+            d.click()
+            time.sleep(0.1)
+            d.send_keys(Keys.CONTROL + "a")
+            d.send_keys(Keys.BACKSPACE)
+            time.sleep(0.1)
+            d.send_keys(travel_date)
+            d.send_keys(Keys.TAB)
             time.sleep(0.3)
             self.driver.execute_script("document.body.click();")
             log.info(f"Date set: {travel_date}")
@@ -451,10 +450,10 @@ class TrainSearch:
                 heading = heading_el[0].text.strip() if heading_el else card_text.split("\n")[0]
                 available_trains.append(heading)
 
-                if train_number in heading or train_number in card_text:
+                if not train_number or str(train_number).upper() == "ANY" or str(train_number) in heading or str(train_number) in card_text:
                     target_card = card
                     _scroll_to(self.driver, card)
-                    log.info(f"Train {train_number} found: {heading}")
+                    log.info(f"Train {train_number or 'ANY'} matched: {heading}")
                     break
             except Exception:
                 continue
@@ -482,20 +481,21 @@ class TrainSearch:
 
         time.sleep(0.5)
 
-        # 3. Click accommodation class (.pre-avl)
+        # 3. Click accommodation class button (outside availability table)
         class_elements = target_card.find_elements(
-            By.CSS_SELECTOR, ".pre-avl, p-tabmenu li[role='tab']"
+            By.CSS_SELECTOR, ":not(table) > .pre-avl, .white-back .pre-avl, app-train-avl-enq > div > div .pre-avl, p-tabmenu li"
         )
         clicked_class = False
 
         for el in class_elements:
             try:
-                if travel_class.upper() in el.text.upper():
+                txt = el.text.upper()
+                if travel_class.upper() in txt or (travel_class.upper() == "3A" and "3 TIER" in txt):
                     _scroll_to(self.driver, el)
                     self.driver.execute_script("arguments[0].click();", el)
                     log.info(f"Class {travel_class} clicked")
                     clicked_class = True
-                    time.sleep(1.5)
+                    time.sleep(2.5)
                     break
             except Exception:
                 continue
@@ -505,21 +505,53 @@ class TrainSearch:
 
         handle_confirmation_dialogs(self.driver)
 
-        # Check for error dialogs after selecting class (e.g. Quota not applicable, Regret, etc.)
+        # 3b. Click the availability date slot to activate Book Now
+        slots = target_card.find_elements(
+            By.CSS_SELECTOR, "table td.link.ng-star-inserted, table td.link"
+        )
+        slot_clicked = False
+        for s in slots:
+            txt = s.text.strip().replace("\n", " ")
+            if txt and "NOT AVAILABLE" not in txt.upper() and "TRAIN CANCELLED" not in txt.upper():
+                log.info(f"Selecting availability slot: {txt}")
+                _scroll_to(self.driver, s)
+                try:
+                    s.click()
+                except Exception:
+                    self.driver.execute_script("arguments[0].click();", s)
+                slot_clicked = True
+                time.sleep(1.5)
+                break
+
+        if not slot_clicked and slots:
+            for s in slots:
+                if s.text.strip():
+                    log.info(f"Selecting fallback slot: {s.text.strip().replace(chr(10), ' ')}")
+                    try:
+                        s.click()
+                    except Exception:
+                        self.driver.execute_script("arguments[0].click();", s)
+                    time.sleep(1.5)
+                    break
+
+        handle_confirmation_dialogs(self.driver)
+
+        # Check for error dialogs after selecting slot (e.g. Quota not applicable, Regret, etc.)
         err = check_search_errors_or_availability(self.driver)
         if err:
-            log.warning(f"Notice after class selection: {err}")
+            log.warning(f"Notice after class/slot selection: {err}")
 
         # 4. Click Book Now button
         book_now_clicked = False
         for sel in [
             "button.btnDefault.train_Search",
+            "button.train_Search",
             "button.btnDefault",
             "//button[contains(text(),'Book Now') or normalize-space()='Book Now']",
-            "//button[contains(.,'Book Now') and not(contains(@class,'disable-book'))]",
+            "//button[contains(.,'Book Now')]",
         ]:
             try:
-                btns = self.driver.find_elements(
+                btns = target_card.find_elements(
                     By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel
                 )
                 for btn in btns:
