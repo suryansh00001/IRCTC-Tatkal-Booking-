@@ -380,57 +380,109 @@ class TrainSearch:
     def submit_search(self):
         time.sleep(0.5)
         btn = _find(self.driver, SEARCH_BTN_SELECTORS, timeout=10)
-        if btn:
-            _scroll_to(self.driver, btn)
-            self.driver.execute_script("arguments[0].click();", btn)
-            log.info("Search submitted")
-            time.sleep(5)
-            handle_confirmation_dialogs(self.driver)
-            return True
-        raise Exception("Search button not found")
+        if not btn:
+            raise Exception("Search button not found")
 
-    def select_train_and_class(self, train_number, travel_class, quota="TQ"):
-        log.info(f"Selecting train {train_number}, class {travel_class}")
+        _scroll_to(self.driver, btn)
+        self.driver.execute_script("arguments[0].click();", btn)
+        log.info("Search submitted — awaiting response...")
 
-        # Wait for results page
-        WebDriverWait(self.driver, 30).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "app-train-avl-enq, app-train-list, .train-heading")
-            )
-        )
-        time.sleep(1.5)
+        # Responsive check: poll up to 5s for early error toast / dialog vs successful navigation
+        for _ in range(10):  # 10 x 0.5s = 5 seconds
+            time.sleep(0.5)
+
+            # Check if an error banner or dialog appeared
+            err = check_search_errors_or_availability(self.driver)
+            if err:
+                log.error(f"❌ IRCTC Search Error: {err}")
+                handle_confirmation_dialogs(self.driver)
+                raise IRCTCServiceUnavailableError(err)
+
+            # Check if results or list page is already reached
+            if "train-list" in self.driver.current_url:
+                break
+            if self.driver.find_elements(By.CSS_SELECTOR, "app-train-avl-enq, app-train-list"):
+                break
+
+        handle_confirmation_dialogs(self.driver)
+        return True
+
+    def select_train_and_class(self, train_number, travel_class, quota="TQ", alt_train=None):
+        log.info(f"Selecting train {train_number}, class {travel_class} (Quota: {quota})")
+
+        # 1. Wait for results page or error detection (responsive polling)
+        train_cards = []
+        start_time = time.time()
+        timeout = 25
+
+        while time.time() - start_time < timeout:
+            # Check for error banners / dialogs first
+            err = check_search_errors_or_availability(self.driver)
+            if err:
+                log.error(f"❌ IRCTC Service/Search Error: {err}")
+                handle_confirmation_dialogs(self.driver)
+                raise IRCTCServiceUnavailableError(err)
+
+            cards = self.driver.find_elements(By.CSS_SELECTOR, "app-train-avl-enq")
+            if cards and any(c.is_displayed() for c in cards):
+                train_cards = [c for c in cards if c.is_displayed()]
+                break
+
+            time.sleep(0.5)
+
+        if not train_cards:
+            # Check once more if an error occurred before raising timeout
+            err = check_search_errors_or_availability(self.driver)
+            if err:
+                raise IRCTCServiceUnavailableError(err)
+            raise TrainNotFoundError("No train cards rendered on search page.")
+
+        time.sleep(0.5)
         handle_confirmation_dialogs(self.driver)
 
-        # Locate train card by number
-        train_cards = self.driver.find_elements(By.CSS_SELECTOR, "app-train-avl-enq")
+        # 2. Locate target train card
         target_card = None
+        available_trains = []
 
         for card in train_cards:
             try:
-                heading = card.find_element(By.CSS_SELECTOR, ".train-heading").text
-                if train_number in heading:
+                card_text = card.text
+                heading_el = card.find_elements(By.CSS_SELECTOR, ".train-heading")
+                heading = heading_el[0].text.strip() if heading_el else card_text.split("\n")[0]
+                available_trains.append(heading)
+
+                if train_number in heading or train_number in card_text:
                     target_card = card
                     _scroll_to(self.driver, card)
-                    log.info(f"Train {train_number} found: {heading.strip()}")
+                    log.info(f"Train {train_number} found: {heading}")
                     break
             except Exception:
-                if train_number in card.text:
-                    target_card = card
-                    _scroll_to(self.driver, card)
-                    log.info(f"Train {train_number} found via card text")
-                    break
+                continue
 
-        if not target_card and train_cards:
-            log.warning(f"Train {train_number} not matched exactly — using first visible train")
-            target_card = train_cards[0]
-            _scroll_to(self.driver, target_card)
+        # If primary train not found, check alt_train if provided
+        if not target_card and alt_train:
+            log.warning(f"Train {train_number} not found. Checking alternate train {alt_train}...")
+            for card in train_cards:
+                try:
+                    if alt_train in card.text:
+                        target_card = card
+                        _scroll_to(self.driver, card)
+                        log.info(f"Alternate train {alt_train} found!")
+                        break
+                except Exception:
+                    continue
 
         if not target_card:
-            raise Exception("No train cards rendered on results page.")
+            trains_summary = " | ".join(available_trains[:6]) if available_trains else "None"
+            log.error(f"❌ Train {train_number} not found in search results. Available trains: {trains_summary}")
+            raise TrainNotFoundError(
+                f"Train {train_number} was not found among {len(train_cards)} trains listed on this route. "
+                f"Available trains: [{trains_summary}]"
+            )
 
         time.sleep(0.5)
 
-        # Click accommodation class (.pre-avl)
+        # 3. Click accommodation class (.pre-avl)
         class_elements = target_card.find_elements(
             By.CSS_SELECTOR, ".pre-avl, p-tabmenu li[role='tab']"
         )
@@ -453,7 +505,13 @@ class TrainSearch:
 
         handle_confirmation_dialogs(self.driver)
 
-        # Click Book Now button
+        # Check for error dialogs after selecting class (e.g. Quota not applicable, Regret, etc.)
+        err = check_search_errors_or_availability(self.driver)
+        if err:
+            log.warning(f"Notice after class selection: {err}")
+
+        # 4. Click Book Now button
+        book_now_clicked = False
         for sel in [
             "button.btnDefault.train_Search",
             "button.btnDefault",
@@ -461,31 +519,37 @@ class TrainSearch:
             "//button[contains(.,'Book Now') and not(contains(@class,'disable-book'))]",
         ]:
             try:
-                if sel.startswith("//"):
-                    btns = self.driver.find_elements(By.XPATH, sel)
-                else:
-                    btns = self.driver.find_elements(By.CSS_SELECTOR, sel)
-
+                btns = self.driver.find_elements(
+                    By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel
+                )
                 for btn in btns:
                     if btn.is_displayed():
                         _scroll_to(self.driver, btn)
                         self.driver.execute_script("arguments[0].click();", btn)
                         log.info("Book Now clicked")
+                        book_now_clicked = True
                         time.sleep(2)
                         handle_confirmation_dialogs(self.driver)
-
-                        # Wait for transition to passenger page
-                        try:
-                            WebDriverWait(self.driver, 15).until(
-                                lambda d: "train-list" not in d.current_url or
-                                          len(d.find_elements(By.CSS_SELECTOR, "app-passenger-input, app-passenger")) > 0
-                            )
-                            log.info("Navigated to passenger details stage")
-                        except Exception:
-                            log.warning("Waiting for passenger form...")
-                        return True
+                        break
+                if book_now_clicked:
+                    break
             except Exception:
                 continue
 
-        log.warning("Book Now button click attempted; proceeding.")
+        if not book_now_clicked:
+            raise Exception("Book Now button could not be clicked.")
+
+        # Wait for transition to passenger page
+        try:
+            WebDriverWait(self.driver, 15).until(
+                lambda d: "train-list" not in d.current_url or
+                          len(d.find_elements(By.CSS_SELECTOR, "app-passenger-input, app-passenger")) > 0
+            )
+            log.info("Navigated to passenger details stage")
+        except Exception:
+            err = check_search_errors_or_availability(self.driver)
+            if err:
+                raise IRCTCServiceUnavailableError(err)
+            log.warning("Waiting for passenger form...")
+
         return True

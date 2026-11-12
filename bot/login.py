@@ -11,69 +11,121 @@ log = get_logger("Login")
 
 
 def _is_logged_in(driver):
-    """Check if session is already logged in."""
+    """Check if session is genuinely logged in via visible header elements."""
     try:
-        src = driver.page_source
-        return any(x in src for x in ['logout', 'LOGOUT', 'My Account', 'myAccount', 'hi,'])
+        # 1. If the header LOGIN button is visible, user is definitely NOT logged in
+        for sel in [
+            "a.loginText",
+            "app-header a.loginText",
+            "//app-header//a[contains(translate(., 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'LOGIN')]",
+        ]:
+            try:
+                btns = driver.find_elements(By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel)
+                if any(b.is_displayed() for b in btns):
+                    return False
+            except Exception:
+                pass
+
+        # 2. If a LOGOUT button is visible in the header, user IS logged in
+        for sel in [
+            "a.logoutText",
+            "app-header a.logoutText",
+            "app-header a[title='Logout']",
+            "//app-header//a[contains(translate(., 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'LOGOUT')]",
+            "//app-header//span[contains(translate(., 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'LOGOUT')]",
+        ]:
+            try:
+                btns = driver.find_elements(By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel)
+                if any(b.is_displayed() for b in btns):
+                    return True
+            except Exception:
+                pass
+
     except Exception:
-        return False
+        pass
+
+    return False
+
+
+def _dismiss_initial_dialogs(driver, preferred="English"):
+    """Auto-dismiss initial language prompt or welcome overlay."""
+    for sel in [
+        f"//p-dialog//button[normalize-space()='{preferred}' or contains(.,'{preferred}')]",
+        "//p-dialog//button[normalize-space()='English' or contains(.,'English')]",
+        "//p-dialog//button[normalize-space()='हिंदी' or contains(.,'हिंदी')]",
+        "//button[normalize-space()='English']",
+        "button[aria-label*='language']",
+        "p-confirmdialog .ui-confirmdialog-acceptbutton",
+        ".ui-confirmdialog-acceptbutton",
+    ]:
+        try:
+            btns = driver.find_elements(By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel)
+            for b in btns:
+                if b.is_displayed():
+                    log.info("Dismissing initial language/welcome prompt...")
+                    driver.execute_script("arguments[0].click();", b)
+                    time.sleep(1)
+                    return True
+        except Exception:
+            pass
+    return False
 
 
 def _do_login(driver, username, password, captcha_solver=None):
     """
     Executes IRCTC login matching exact Angular / PrimeNG component hierarchy:
-    1. app-header a.loginText
-    2. app-login
-    3. app-login input[formcontrolname='userid']
-    4. app-login input[formcontrolname='password']
-    5. app-login app-captcha .captcha-img -> RapidOCR
-    6. app-login #captcha
+    1. Dismiss language prompt if present
+    2. app-header a.loginText
+    3. app-login modal
+    4. app-login input[formcontrolname='userid']
+    5. app-login input[formcontrolname='password']
+    6. Conditionally solve captcha if rendered
     7. app-login button[type='submit']
-    8. Wait for app-login to disappear
+    8. Wait for app-login to disappear / session verified
     """
     for attempt in range(1, 4):
         try:
             log.info(f"Login attempt {attempt}/3 for user: {username}")
             driver.get(BASE_URL)
-            time.sleep(2)
+            time.sleep(2.5)
 
             if _is_logged_in(driver):
                 log.info("Already logged in.")
                 return True
 
-            # 1. Click header LOGIN button (app-header a.loginText)
+            # 1. Dismiss initial language or welcome dialog
+            _dismiss_initial_dialogs(driver)
+
+            # 2. Click header LOGIN button (app-header a.loginText)
             log.info("Opening login modal via header button...")
             login_btn = None
             for sel in [
-                "app-header a.loginText",
                 "a.loginText",
+                "app-header a.loginText",
                 ".loginText",
-                "//a[contains(text(),'LOGIN')]",
+                "//a[contains(translate(., 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'LOGIN')]",
             ]:
                 try:
-                    if sel.startswith("//"):
-                        login_btn = WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.XPATH, sel))
-                        )
-                    else:
-                        login_btn = WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, sel))
-                        )
-                    if login_btn and login_btn.is_displayed():
+                    btns = driver.find_elements(By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel)
+                    for b in btns:
+                        if b.is_displayed():
+                            login_btn = b
+                            break
+                    if login_btn:
                         driver.execute_script("arguments[0].click();", login_btn)
                         log.info("Clicked header login button.")
                         break
                 except Exception:
                     continue
 
-            # 2. Wait for app-login component to be visible in DOM
+            # 3. Wait for app-login component to be visible in DOM
             log.info("Waiting for app-login modal to appear...")
             login_modal = WebDriverWait(driver, 10).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, "app-login"))
             )
             time.sleep(0.5)
 
-            # 3. Locate username and password inputs inside app-login
+            # 4. Locate username and password inputs inside app-login
             usr_input = WebDriverWait(driver, 8).until(
                 EC.visibility_of_element_located(
                     (By.CSS_SELECTOR, "app-login input[formcontrolname='userid']")
@@ -85,65 +137,73 @@ def _do_login(driver, username, password, captcha_solver=None):
                 )
             )
 
-            # 4. Fill username with real send_keys so Angular reactive form updates
+            # Fill username with native send_keys and trigger Angular input events
             usr_input.click()
             time.sleep(0.1)
             usr_input.clear()
             usr_input.send_keys(username)
+            driver.execute_script(
+                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", usr_input
+            )
             log.info(f"Entered username: {username}")
 
-            # 5. Fill password with real send_keys
+            # Fill password
             pwd_input.click()
             time.sleep(0.1)
             pwd_input.clear()
             pwd_input.send_keys(password)
+            driver.execute_script(
+                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", pwd_input
+            )
             log.info("Entered password.")
 
-            time.sleep(0.3)
+            time.sleep(0.4)
 
-            # 6. Locate captcha image and input inside app-login
-            captcha_img = WebDriverWait(driver, 8).until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "app-login app-captcha .captcha-img, app-login app-captcha img, app-captcha img")
-                )
+            # 5. Conditionally check if captcha is present on this login form
+            captcha_imgs = login_modal.find_elements(
+                By.CSS_SELECTOR, "app-captcha .captcha-img, app-captcha img, .captcha-img"
             )
-            captcha_input = WebDriverWait(driver, 8).until(
-                EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, "app-login #captcha, app-captcha #captcha, app-login input[formcontrolname='captcha']")
-                )
+            captcha_inps = login_modal.find_elements(
+                By.CSS_SELECTOR, "#captcha, input[formcontrolname='captcha']"
             )
 
-            # Allow captcha image decoding
-            time.sleep(0.6)
+            if captcha_imgs and captcha_inps and captcha_imgs[0].is_displayed():
+                c_img = captcha_imgs[0]
+                c_inp = captcha_inps[0]
+                solved_text = ""
+                if captcha_solver:
+                    log.info("Solving login CAPTCHA with RapidOCR AI...")
+                    solved_text = captcha_solver.solve_from_element(driver, c_img)
 
-            solved_text = ""
-            if captcha_solver:
-                log.info("Solving login CAPTCHA with RapidOCR AI...")
-                solved_text = captcha_solver.solve_from_element(driver, captcha_img)
-
-            if solved_text:
-                captcha_input.click()
-                time.sleep(0.1)
-                captcha_input.clear()
-                captcha_input.send_keys(solved_text)
-                log.info(f"Entered solved CAPTCHA: '{solved_text}'")
-            else:
-                log.info("Awaiting CAPTCHA (you can also type it directly in the open Chrome window)...")
-                for _ in range(16):  # max 8 seconds
-                    val = captcha_input.get_attribute("value") or ""
-                    if len(val.strip()) >= 4:
-                        log.info(f"CAPTCHA detected: '{val.strip()}'")
-                        break
-                    time.sleep(0.5)
+                if solved_text:
+                    c_inp.click()
+                    time.sleep(0.1)
+                    c_inp.clear()
+                    c_inp.send_keys(solved_text)
+                    driver.execute_script(
+                        "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                        "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", c_inp
+                    )
+                    log.info(f"Entered solved CAPTCHA: '{solved_text}'")
+                else:
+                    log.info("Awaiting CAPTCHA input...")
+                    for _ in range(16):
+                        val = c_inp.get_attribute("value") or ""
+                        if len(val.strip()) >= 4:
+                            log.info(f"CAPTCHA detected: '{val.strip()}'")
+                            break
+                        time.sleep(0.5)
 
             time.sleep(0.3)
 
-            # 7. Submit: Click button[type='submit'] inside app-login
+            # 6. Submit: Click button[type='submit'] inside app-login
             sign_in_btn = login_modal.find_element(By.CSS_SELECTOR, "button[type='submit']")
             driver.execute_script("arguments[0].click();", sign_in_btn)
             log.info("⚡ Clicked SIGN IN button.")
 
-            # 8. Wait for app-login modal to disappear (signifying successful login)
+            # 7. Wait for app-login modal to disappear (signifying successful login)
             try:
                 WebDriverWait(driver, 10).until(
                     EC.invisibility_of_element_located((By.CSS_SELECTOR, "app-login"))
@@ -159,11 +219,16 @@ def _do_login(driver, username, password, captcha_solver=None):
                 log.info("🎉 Login successful! Session is active.")
                 return True
 
-            src = driver.page_source
-            if "invalid" in src.lower() or "incorrect" in src.lower() or "bad credentials" in src.lower():
-                log.error("Wrong credentials or invalid captcha — retrying...")
-                time.sleep(2)
-                continue
+            # Check for visible error message inside app-login
+            try:
+                err_els = login_modal.find_elements(
+                    By.CSS_SELECTOR, ".loginError, .alert-danger, .error, .ui-messages-error"
+                )
+                for ed in err_els:
+                    if ed.is_displayed() and ed.text.strip():
+                        log.error(f"IRCTC Login Error: {ed.text.strip()}")
+            except Exception:
+                pass
 
             log.warning(f"Attempt {attempt} did not complete login, retrying...")
             time.sleep(2)
@@ -192,8 +257,9 @@ class IRCTCLogin:
         self._username = username
         self._password = password
         if _is_logged_in(self.driver):
-            log.info("Session already active — skipping login.")
+            log.info("Session already verified active — skipping login.")
             return True
+        log.info("No active session detected — starting login...")
         return _do_login(self.driver, username, password, self.captcha_solver)
 
     def is_logged_in(self):

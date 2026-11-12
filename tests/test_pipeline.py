@@ -11,7 +11,13 @@ from bot.booking_bot import BookingJob, IRCTCBookingBot
 from bot.scheduler import TatkalScheduler
 from bot.passenger_filler import PassengerFiller
 from bot.payment import PaymentHandler
+from bot.train_search import (
+    IRCTCServiceUnavailableError,
+    TrainNotFoundError,
+    check_search_errors_or_availability,
+)
 from run_bot import load_job_from_file
+from unittest.mock import MagicMock
 
 
 class TestIRCTCPipeline(unittest.TestCase):
@@ -61,6 +67,60 @@ class TestIRCTCPipeline(unittest.TestCase):
         self.assertIn("age", pax)
         self.assertIn("gender", pax)
         self.assertIn("berth_pref", pax)
+
+    def test_06_error_detection_service_unavailable(self):
+        """Verify check_search_errors_or_availability detects error toast."""
+        mock_driver = MagicMock()
+        mock_driver.implicitly_wait = MagicMock()
+        mock_driver.current_url = "https://www.irctc.co.in/nget/train-search"
+
+        mock_el = MagicMock()
+        mock_el.is_displayed.return_value = True
+        mock_el.text = "Service is not available between NDLS and CSTM"
+        mock_el.get_attribute.return_value = "ui-growl-message"
+
+        mock_driver.find_elements.side_effect = lambda by, sel: [mock_el] if ".ui-growl-message" in sel else []
+
+        err = check_search_errors_or_availability(mock_driver)
+        self.assertIsNotNone(err)
+        self.assertIn("Service is not available", err)
+
+    def test_07_error_detection_no_trains(self):
+        """Verify check_search_errors_or_availability detects no direct trains message."""
+        mock_driver = MagicMock()
+        mock_driver.implicitly_wait = MagicMock()
+        mock_driver.current_url = "https://www.irctc.co.in/nget/train-list"
+
+        mock_el = MagicMock()
+        mock_el.is_displayed.return_value = True
+        mock_el.text = "No direct trains found between selected stations"
+        mock_el.get_attribute.return_value = "no-train-heading"
+
+        def fake_find(by, sel):
+            if ".no-train" in sel or "no-train" in sel:
+                return [mock_el]
+            return []
+
+        mock_driver.find_elements.side_effect = fake_find
+
+        err = check_search_errors_or_availability(mock_driver)
+        self.assertIsNotNone(err)
+        self.assertIn("No direct trains", err)
+
+    def test_08_error_detection_clean_page(self):
+        """Verify check_search_errors_or_availability returns None when no error exists."""
+        mock_driver = MagicMock()
+        mock_driver.implicitly_wait = MagicMock()
+        mock_driver.current_url = "https://www.irctc.co.in/nget/train-list"
+        mock_driver.find_elements.return_value = []
+
+        err = check_search_errors_or_availability(mock_driver)
+        self.assertIsNone(err)
+
+    def test_09_custom_exceptions(self):
+        """Verify custom search exceptions have proper inheritance."""
+        self.assertTrue(issubclass(IRCTCServiceUnavailableError, Exception))
+        self.assertTrue(issubclass(TrainNotFoundError, Exception))
 
 
 if __name__ == "__main__":

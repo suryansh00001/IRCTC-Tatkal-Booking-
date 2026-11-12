@@ -9,7 +9,13 @@ from utils.notifier import notifier
 from utils.captcha_solver import CaptchaSolver
 from bot.driver import create_driver, safe_quit
 from bot.login import IRCTCLogin
-from bot.train_search import TrainSearch, handle_confirmation_dialogs
+from bot.train_search import (
+    TrainSearch,
+    handle_confirmation_dialogs,
+    check_search_errors_or_availability,
+    IRCTCServiceUnavailableError,
+    TrainNotFoundError,
+)
 from bot.passenger_filler import PassengerFiller
 from bot.payment import PaymentHandler
 from bot.scheduler import TatkalScheduler
@@ -76,6 +82,7 @@ class IRCTCBookingBot:
         self.result = {"success": False, "pnr": "", "error": ""}
         self.status_callbacks = []
         self._booking_thread = None
+        self._retry_count = 0
 
     def load_job(self, job: BookingJob):
         """Load a booking job."""
@@ -267,17 +274,21 @@ class IRCTCBookingBot:
 
             # ── Step 3: Select train + class ──
             self._emit("step", f"Step 3: Selecting train {job.train_number} class {job.train_class}...")
-            ok = search_hdl.select_train_and_class(
-                job.train_number, job.train_class, job.quota
-            )
-            if not ok:
+            try:
+                ok = search_hdl.select_train_and_class(
+                    job.train_number, job.train_class, job.quota, alt_train=job.alt_train
+                )
+            except TrainNotFoundError as tne:
                 if job.alt_quota:
-                    log.warning(f"Trying alternate quota: {job.alt_quota}")
+                    log.warning(f"Train/class not found under {job.quota}. Trying alternate quota: {job.alt_quota}")
                     ok = search_hdl.select_train_and_class(
-                        job.train_number, job.train_class, job.alt_quota
+                        job.train_number, job.train_class, job.alt_quota, alt_train=job.alt_train
                     )
-                if not ok:
-                    raise Exception(f"Train {job.train_number} / class {job.train_class} not available!")
+                else:
+                    raise tne
+            except IRCTCServiceUnavailableError as sue:
+                raise sue
+
             log.info("✅ Step 3: Train and class selected")
 
             # ── Step 4: Fill passengers ──
@@ -335,6 +346,14 @@ class IRCTCBookingBot:
                 log.warning("Payment submitted. Please check IRCTC account for PNR status.")
                 self._emit("warning", "Payment done — check IRCTC for PNR manually.")
 
+        except IRCTCServiceUnavailableError as sue:
+            self.result = {"success": False, "pnr": "", "error": str(sue)}
+            log.error(f"❌ BOOKING HALTED (IRCTC SERVICE UNAVAILABLE): {sue}")
+            self._emit("error", f"IRCTC Service Unavailable: {sue}")
+            notifier.booking_failed(str(sue))
+            # Service unavailable / maintenance / booking blocked — halt cleanly without looping
+            return
+
         except Exception as e:
             self.result = {"success": False, "pnr": "", "error": str(e)}
             log.error(f"❌ BOOKING FAILED: {e}")
@@ -343,12 +362,13 @@ class IRCTCBookingBot:
             if not job.dry_run:
                 self._maybe_retry()
 
-    def _maybe_retry(self, attempt: int = 1):
-        if attempt >= MAX_RETRIES:
+    def _maybe_retry(self):
+        self._retry_count += 1
+        if self._retry_count >= MAX_RETRIES:
             log.error(f"All {MAX_RETRIES} booking attempts exhausted.")
             return
-        log.warning(f"Retrying booking ({attempt+1}/{MAX_RETRIES})...")
-        self._emit("retry", f"Retrying ({attempt+1}/{MAX_RETRIES})...")
+        log.warning(f"Retrying booking ({self._retry_count + 1}/{MAX_RETRIES})...")
+        self._emit("retry", f"Retrying ({self._retry_count + 1}/{MAX_RETRIES})...")
         time.sleep(3)
         self._execute_booking()
 
