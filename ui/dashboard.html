@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RailFast Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#080a0d;--s1:#0d1017;--s2:#131820;--s3:#181f2b;--b1:#1c2535;--b2:#243040;--amber:#f5a623;--amber2:#ffbe4d;--adim:rgba(245,166,35,.12);--green:#39d98a;--gdim:rgba(57,217,138,.1);--red:#ff5252;--rdim:rgba(255,82,82,.1);--blue:#4da6ff;--bdim:rgba(77,166,255,.08);--t1:#dde3ed;--t2:#8a95a8;--t3:#4a5568;--mono:'JetBrains Mono',monospace;--disp:'Syne',sans-serif;--body:'DM Sans',sans-serif}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--t1);font-family:var(--body);min-height:100vh;overflow-x:hidden;font-size:14px}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.025) 2px,rgba(0,0,0,.025) 4px);pointer-events:none;z-index:9999}
+.topbar{height:54px;background:rgba(13,16,23,.97);backdrop-filter:blur(20px);border-bottom:1px solid var(--b1);display:flex;align-items:center;padding:0 22px;gap:16px;position:sticky;top:0;z-index:100}
+.logo{font-family:var(--disp);font-size:1.25rem;font-weight:800;display:flex;align-items:center;gap:8px}
+.logo-icon{width:26px;height:26px;background:var(--amber);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.85rem}
+.logo-text span{color:var(--amber)}
+.tbdiv{width:1px;height:18px;background:var(--b2)}
+.tbsub{font-family:var(--mono);font-size:.62rem;color:var(--t3);letter-spacing:.1em;text-transform:uppercase}
+.tbr{margin-left:auto;display:flex;align-items:center;gap:10px}
+.cpill{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:.67rem;font-weight:700;color:var(--t3);letter-spacing:.06em}
+.cdot{width:7px;height:7px;border-radius:50%;background:var(--t3);transition:background .3s}
+.cdot.on{background:var(--green);box-shadow:0 0 8px rgba(57,217,138,.5);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
+.tbbtn{padding:5px 12px;border-radius:6px;font-size:.73rem;font-weight:600;cursor:pointer;border:1px solid var(--b2);background:var(--s2);color:var(--t2);font-family:var(--body);transition:all .15s}
+.tbbtn:hover{border-color:var(--amber);color:var(--amber)}
+.tbbtn.danger{border-color:rgba(255,82,82,.3);color:var(--red)}
+.app{display:grid;grid-template-columns:370px 1fr;height:calc(100vh - 54px);overflow:hidden}
+.sidebar{background:var(--s1);border-right:1px solid var(--b1);overflow-y:auto}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--b2)}
+.sec{padding:18px;border-bottom:1px solid var(--b1)}
+.slabel{font-family:var(--mono);font-size:.62rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);margin-bottom:13px;display:flex;align-items:center;gap:8px}
+.slabel::after{content:'';flex:1;height:1px;background:var(--b1)}
+.f{margin-bottom:11px}
+label{display:block;font-family:var(--mono);font-size:.62rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:5px}
+input,select{width:100%;background:var(--s3);border:1px solid var(--b2);border-radius:7px;color:var(--t1);font-size:.84rem;font-family:var(--body);padding:8px 11px;outline:none;transition:border-color .15s,box-shadow .15s;appearance:none}
+input:focus,select:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(245,166,35,.09)}
+input::placeholder{color:var(--t3)}
+select option{background:var(--s2)}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.iw{position:relative}.iw input{padding-left:32px}
+.ii{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:.85rem;pointer-events:none;opacity:.45}
+.trow{display:flex;align-items:center;justify-content:space-between;padding:6px 0}
+.tinfo .tn{font-size:.82rem;font-weight:500}
+.tinfo .td{font-size:.69rem;color:var(--t3);margin-top:1px}
+.tog{position:relative;width:36px;height:20px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0}
+.tsl{position:absolute;cursor:pointer;inset:0;background:var(--s3);border:1px solid var(--b2);border-radius:100px;transition:.25s}
+.tsl::before{content:'';position:absolute;left:3px;top:3px;width:12px;height:12px;border-radius:50%;background:var(--t3);transition:.25s}
+.tog input:checked+.tsl{background:rgba(245,166,35,.15);border-color:rgba(245,166,35,.4)}
+.tog input:checked+.tsl::before{transform:translateX(16px);background:var(--amber)}
+.pcard{background:var(--s3);border:1px solid var(--b2);border-radius:9px;padding:13px;margin-bottom:9px}
+.pch{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px}
+.pnum{font-family:var(--mono);font-size:.65rem;font-weight:700;color:var(--amber);background:var(--adim);border:1px solid rgba(245,166,35,.2);padding:2px 8px;border-radius:100px}
+.prem{background:transparent;border:1px solid rgba(255,82,82,.25);color:var(--red);border-radius:5px;padding:3px 8px;font-size:.68rem;cursor:pointer;font-family:var(--body);transition:all .15s}
+.prem:hover{background:var(--rdim)}
+.ptabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:13px}
+.ptab{background:var(--s3);border:1px solid var(--b2);border-radius:8px;padding:8px 5px;text-align:center;cursor:pointer;transition:all .15s}
+.ptab:hover{border-color:rgba(245,166,35,.3)}
+.ptab.on{border-color:var(--amber);background:var(--adim)}
+.pti{font-size:1.15rem;margin-bottom:3px}
+.ptl{font-size:.63rem;font-weight:700;color:var(--t2);font-family:var(--mono);letter-spacing:.04em}
+.ptab.on .ptl{color:var(--amber)}
+.pf{display:none}.pf.on{display:block}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 18px;border-radius:8px;font-weight:600;font-size:.84rem;cursor:pointer;border:none;transition:all .15s;font-family:var(--body)}
+.ba{background:var(--amber);color:#000}
+.ba:hover{background:var(--amber2);transform:translateY(-1px);box-shadow:0 5px 18px rgba(245,166,35,.3)}
+.ba:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+.bg{background:transparent;color:var(--t2);border:1px solid var(--b2)}
+.bg:hover{border-color:var(--amber);color:var(--amber)}
+.bgrn{background:var(--green);color:#000;font-weight:700}
+.bgrn:hover{transform:translateY(-1px);box-shadow:0 5px 18px rgba(57,217,138,.3)}
+.bfull{width:100%}
+.blg{padding:13px 26px;font-size:.92rem;border-radius:9px}
+.bsm{padding:5px 11px;font-size:.73rem}
+.right{display:flex;flex-direction:column;overflow:hidden}
+.cdhero{padding:24px 28px 20px;border-bottom:1px solid var(--b1);background:linear-gradient(180deg,rgba(245,166,35,.04) 0%,transparent 100%);position:relative;overflow:hidden}
+.cdhero::before{content:'';position:absolute;top:-40px;right:-40px;width:180px;height:180px;background:radial-gradient(circle,rgba(245,166,35,.06) 0%,transparent 70%);pointer-events:none}
+.cdlabel{font-family:var(--mono);font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--t3);margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.cdlabel::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--amber);animation:blink 1.5s infinite}
+.cdrow{display:flex;align-items:baseline;gap:4px;margin-bottom:8px}
+.cdb{text-align:center}
+.cdnum{font-family:var(--mono);font-size:3.8rem;font-weight:700;color:var(--amber);line-height:1;text-shadow:0 0 36px rgba(245,166,35,.3);transition:color .3s}
+.cdnum.urg{color:var(--red);text-shadow:0 0 36px rgba(255,82,82,.4);animation:urgp .5s infinite}
+@keyframes urgp{0%,100%{opacity:1}50%{opacity:.7}}
+.cdunit{font-family:var(--mono);font-size:.58rem;color:var(--t3);letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
+.cdsep{font-family:var(--mono);font-size:3.2rem;color:rgba(245,166,35,.2);line-height:1;padding-bottom:8px;font-weight:300}
+.cdbottom{display:flex;align-items:center;justify-content:space-between}
+.cdtgt{font-size:.78rem;color:var(--t2)}
+.cdtgt strong{color:var(--amber)}
+.sbadge{display:flex;align-items:center;gap:5px;padding:4px 11px;border-radius:100px;font-family:var(--mono);font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;transition:all .3s}
+.s-idle{background:rgba(138,149,168,.1);border:1px solid rgba(138,149,168,.2);color:var(--t3)}
+.s-armed{background:var(--adim);border:1px solid rgba(245,166,35,.3);color:var(--amber)}
+.s-run{background:var(--gdim);border:1px solid rgba(57,217,138,.3);color:var(--green)}
+.s-err{background:var(--rdim);border:1px solid rgba(255,82,82,.3);color:var(--red)}
+.sbdot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:blink 1.5s infinite}
+.tlsec{padding:18px 28px;border-bottom:1px solid var(--b1)}
+.timeline{display:flex;align-items:center;overflow-x:auto;padding:4px 0 8px}
+.timeline::-webkit-scrollbar{height:3px}
+.timeline::-webkit-scrollbar-thumb{background:var(--b2)}
+.tlstep{display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+.tlconn{height:2px;width:34px;background:var(--b2);flex-shrink:0;transition:background .4s;align-self:center;margin-bottom:20px}
+.tlconn.done{background:var(--green)}.tlconn.act{background:var(--amber)}
+.tlcirc{width:30px;height:30px;border-radius:50%;border:2px solid var(--b2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.68rem;font-weight:700;color:var(--t3);background:var(--s1);transition:all .4s;z-index:1}
+.tlstep.done .tlcirc{border-color:var(--green);color:var(--green);background:var(--gdim)}
+.tlstep.act .tlcirc{border-color:var(--amber);color:var(--amber);background:var(--adim);animation:ap 1s infinite;box-shadow:0 0 12px rgba(245,166,35,.3)}
+@keyframes ap{0%,100%{box-shadow:0 0 12px rgba(245,166,35,.3)}50%{box-shadow:0 0 22px rgba(245,166,35,.6)}}
+.tllabel{margin-top:5px;font-size:.59rem;color:var(--t3);text-align:center;width:58px;line-height:1.3;font-family:var(--mono)}
+.tlstep.done .tllabel{color:var(--green)}.tlstep.act .tllabel{color:var(--amber)}
+.logsec{flex:1;padding:18px 28px;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.loghdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.logtitle{font-family:var(--mono);font-size:.65rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);display:flex;align-items:center;gap:8px}
+.livebadge{background:var(--gdim);border:1px solid rgba(57,217,138,.25);color:var(--green);font-family:var(--mono);font-size:.58rem;font-weight:700;padding:2px 6px;border-radius:100px}
+.logterm{flex:1;background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:13px 14px;overflow-y:auto;font-family:var(--mono);font-size:.73rem;line-height:1.75;min-height:0}
+.logterm::-webkit-scrollbar{width:3px}
+.logterm::-webkit-scrollbar-thumb{background:var(--b2)}
+.ll{display:flex;gap:10px;margin-bottom:1px}
+.lts{color:var(--t3);flex-shrink:0}.llv{flex-shrink:0;font-weight:700;width:48px}.lm{color:var(--t2)}
+.ll.info .llv{color:var(--blue)}.ll.warn .llv,.ll.warn .lm{color:var(--amber)}.ll.ok .llv,.ll.ok .lm{color:var(--green)}.ll.err .llv,.ll.err .lm{color:var(--red)}.ll.sys .llv{color:var(--t3)}
+.armbar{padding:16px 28px;border-top:1px solid var(--b1);display:flex;align-items:center;gap:14px;background:var(--s1)}
+.armi{flex:1}.armi-t{font-weight:600;font-size:.88rem}.armi-s{font-size:.72rem;color:var(--t3);margin-top:1px;font-family:var(--mono)}
+.sov{display:none;position:fixed;inset:0;background:rgba(8,10,13,.95);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
+.sov.show{display:flex}
+.scard{background:var(--s1);border:1px solid rgba(57,217,138,.3);border-radius:18px;padding:44px;text-align:center;max-width:460px;width:90%;animation:pi .5s cubic-bezier(.34,1.56,.64,1);position:relative;overflow:hidden}
+.scard::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center top,rgba(57,217,138,.06) 0%,transparent 60%)}
+@keyframes pi{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+.sico{width:76px;height:76px;margin:0 auto 20px;border-radius:50%;background:var(--gdim);border:2px solid rgba(57,217,138,.4);display:flex;align-items:center;justify-content:center;font-size:2rem}
+.stitle{font-family:var(--disp);font-size:1.9rem;font-weight:800;color:var(--green);letter-spacing:-.02em;margin-bottom:7px}
+.ssub{font-size:.83rem;color:var(--t2);margin-bottom:22px}
+.pnrbox{background:var(--s3);border:1px solid rgba(57,217,138,.25);border-radius:11px;padding:14px 22px;margin-bottom:18px;display:inline-block}
+.pnrl{font-family:var(--mono);font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);margin-bottom:3px}
+.pnrn{font-family:var(--mono);font-size:1.9rem;font-weight:700;color:var(--green);letter-spacing:.12em}
+.stags{display:flex;gap:7px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}
+.stag{padding:3px 11px;border-radius:100px;font-size:.68rem;font-weight:700;font-family:var(--mono);letter-spacing:.05em}
+.sg{background:var(--gdim);border:1px solid rgba(57,217,138,.25);color:var(--green)}.sa{background:var(--adim);border:1px solid rgba(245,166,35,.25);color:var(--amber)}.sb2{background:var(--bdim);border:1px solid rgba(77,166,255,.2);color:var(--blue)}
+.sdets{text-align:left;margin-bottom:22px}
+.sdr{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--b1);font-size:.81rem}
+.sdr:last-child{border-bottom:none}
+.sdk{color:var(--t3)}.sdv{font-weight:500}
+.sacts{display:flex;gap:9px;justify-content:center}
+.tc{position:fixed;top:66px;right:18px;z-index:300;display:flex;flex-direction:column;gap:7px}
+.toast{background:var(--s2);border:1px solid var(--b2);border-radius:9px;padding:10px 14px;font-size:.8rem;display:flex;align-items:center;gap:9px;min-width:250px;animation:ti .3s ease;box-shadow:0 8px 28px rgba(0,0,0,.4)}
+.toast.success{border-color:rgba(57,217,138,.3)}.toast.error{border-color:rgba(255,82,82,.3)}.toast.warning{border-color:rgba(245,166,35,.3)}
+@keyframes ti{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+.div1{height:1px;background:var(--b1);margin:10px 0}
+.ib{background:rgba(77,166,255,.05);border:1px solid rgba(77,166,255,.15);border-radius:7px;padding:9px 11px;font-size:.75rem;color:var(--t2);line-height:1.5}
+.ib.am{background:var(--adim);border-color:rgba(245,166,35,.2)}.ib.gn{background:var(--gdim);border-color:rgba(57,217,138,.2);color:var(--green)}
+.tag-a{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:.6rem;font-weight:700;background:var(--bdim);border:1px solid rgba(77,166,255,.2);color:var(--blue);vertical-align:middle;margin-left:5px}
+.mt10{margin-top:10px}
+</style>
+</head>
+<body>
+
+<div class="tc" id="tc"></div>
+
+<div class="sov" id="sov">
+  <div class="scard">
+    <div class="sico">&#127881;</div>
+    <div class="stitle">TICKET BOOKED!</div>
+    <div class="ssub">Your Tatkal ticket has been confirmed by AutoBook bot.</div>
+    <div class="pnrbox"><div class="pnrl">PNR Number</div><div class="pnrn" id="spnr">--</div></div>
+    <div class="stags"><span class="stag sg">&#10003; Confirmed</span><span class="stag sa">&#9889; Tatkal</span><span class="stag sb2" id="scls">3A</span></div>
+    <div class="sdets" id="sdets"></div>
+    <div class="sacts"><button class="btn bg bsm" onclick="window.print()">Print</button><button class="btn ba" onclick="resetBot()">+ New Booking</button></div>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="logo"><div class="logo-icon">&#128647;</div><div class="logo-text">Rail<span>Fast</span></div></div>
+  <div class="tbdiv"></div>
+  <div class="tbsub">IRCTC Tatkal AutoBook Dashboard v2.0</div>
+  <div class="tbr">
+    <div class="cpill"><div class="cdot" id="cdot"></div><span id="ctxt">CONNECTING</span></div>
+    <div class="tbdiv"></div>
+    <button class="tbbtn" onclick="clearLog()">Clear Log</button>
+    <button class="tbbtn danger" id="disarmBtn" style="display:none" onclick="disarmBot()">Stop Bot</button>
+  </div>
+</header>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sec">
+      <div class="slabel">IRCTC Account</div>
+      <div class="f"><label>Username</label><div class="iw"><span class="ii">&#128100;</span><input type="text" id="usr" placeholder="IRCTC user ID"/></div></div>
+      <div class="f"><label>Password</label><div class="iw"><span class="ii">&#128273;</span><input type="password" id="pwd" placeholder="IRCTC password"/></div></div>
+      <div class="f"><label>Mobile (for OTP)</label><div class="iw"><span class="ii">&#128241;</span><input type="tel" id="mob" placeholder="+91 XXXXXXXXXX"/></div></div>
+      <div class="trow"><div class="tinfo"><div class="tn">AI CAPTCHA Auto-solve</div><div class="td">2Captcha API or Tesseract OCR</div></div><label class="tog"><input type="checkbox" id="autoc" checked><span class="tsl"></span></label></div>
+    </div>
+    <div class="sec">
+      <div class="slabel">Journey Details</div>
+      <div class="fr"><div class="f"><label>From Station</label><input type="text" id="from" placeholder="NDLS" list="stl"/></div><div class="f"><label>To Station</label><input type="text" id="to" placeholder="CSTM" list="stl"/></div></div>
+      <div class="fr"><div class="f"><label>Travel Date</label><input type="date" id="tdate"/></div><div class="f"><label>Train Number</label><input type="text" id="tnum" placeholder="12951"/></div></div>
+      <div class="fr">
+        <div class="f"><label>Class</label><select id="tcls"><option value="1A">1A - First AC</option><option value="2A">2A - Second AC</option><option value="3A" selected>3A - Third AC</option><option value="3E">3E - Economy AC</option><option value="SL">SL - Sleeper</option><option value="CC">CC - Chair Car</option><option value="2S">2S - 2nd Sitting</option></select></div>
+        <div class="f"><label>Quota</label><select id="quot"><option value="TQ">TQ - Tatkal</option><option value="PT">PT - Prem Tatkal</option><option value="GN">GN - General</option></select></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="slabel">Scheduler</div>
+      <div class="ib am" style="margin-bottom:11px;font-size:.72rem">AC (1A/2A/3A): <strong style="color:var(--amber)">10:00 AM</strong> | Non-AC (SL/2S): <strong style="color:var(--amber)">11:00 AM</strong></div>
+      <div class="fr"><div class="f"><label>Booking Date (D-1)</label><input type="date" id="bdate"/></div><div class="f"><label>Trigger Time HH:MM</label><div style="display:flex;align-items:center;gap:4px"><input type="number" id="thh" value="10" min="0" max="23" style="text-align:center"/><span style="color:var(--amber);font-family:var(--mono);font-weight:700">:</span><input type="number" id="tmm" value="00" min="0" max="59" style="text-align:center"/></div></div></div>
+      <div class="f"><label>Pre-login Buffer (seconds before window)</label><input type="number" id="pls" value="120" min="30" max="300"/></div>
+      <div class="trow"><div class="tinfo"><div class="tn">Turbo Mode</div><div class="td">Fill all forms in under 1 second</div></div><label class="tog"><input type="checkbox" id="turbo" checked><span class="tsl"></span></label></div>
+    </div>
+    <div class="sec">
+      <div class="slabel">Passengers (max 4)</div>
+      <div id="paxlist"></div>
+      <button class="btn bg bsm bfull mt10" id="addpax" onclick="addPax()">+ Add Passenger</button>
+    </div>
+    <div class="sec">
+      <div class="slabel">Payment Method</div>
+      <div class="ptabs">
+        <div class="ptab on" id="pt_upi" onclick="setPay('upi')"><div class="pti">&#128242;</div><div class="ptl">UPI</div></div>
+        <div class="ptab" id="pt_card" onclick="setPay('card')"><div class="pti">&#128179;</div><div class="ptl">CARD</div></div>
+        <div class="ptab" id="pt_nb" onclick="setPay('nb')"><div class="pti">&#127968;</div><div class="ptl">NETB</div></div>
+        <div class="ptab" id="pt_wallet" onclick="setPay('wallet')"><div class="pti">&#128092;</div><div class="ptl">WALLET</div></div>
+      </div>
+      <div class="pf on" id="pf_upi"><div class="f"><label>UPI ID <span class="tag-a">AUTO-PAY</span></label><input type="text" id="upid" placeholder="yourname@upi"/></div></div>
+      <div class="pf" id="pf_card">
+        <div class="f"><label>Card Number <span class="tag-a">ENCRYPTED</span></label><input type="text" id="cnum" placeholder="XXXX XXXX XXXX XXXX" maxlength="19" oninput="fmtCard(this)"/></div>
+        <div class="fr"><div class="f"><label>Expiry</label><input type="text" id="cexp" placeholder="MM/YY" maxlength="5"/></div><div class="f"><label>CVV</label><input type="password" id="ccvv" placeholder="CVV" maxlength="4"/></div></div>
+        <div class="f"><label>Name on Card</label><input type="text" id="cnm" placeholder="Full name on card"/></div>
+      </div>
+      <div class="pf" id="pf_nb"><div class="f"><label>Bank</label><select id="nbk"><option>State Bank of India</option><option>HDFC Bank</option><option>ICICI Bank</option><option>Axis Bank</option><option>Kotak Mahindra</option><option>Bank of Baroda</option><option>Punjab National Bank</option></select></div></div>
+      <div class="pf" id="pf_wallet"><div class="ib gn">Wallet linked to your IRCTC account. No extra setup needed.</div></div>
+      <div class="div1"></div>
+      <div class="trow"><div class="tinfo"><div class="tn">Auto-retry on payment failure</div><div class="td">Up to 3 retries</div></div><label class="tog"><input type="checkbox" id="retr" checked><span class="tsl"></span></label></div>
+      <div class="trow"><div class="tinfo"><div class="tn">SMS on booking success</div><div class="td">Sends PNR via Twilio</div></div><label class="tog"><input type="checkbox" id="sms" checked><span class="tsl"></span></label></div>
+    </div>
+  </aside>
+
+  <div class="right">
+    <div class="cdhero">
+      <div class="cdlabel">TATKAL WINDOW OPENS IN</div>
+      <div class="cdrow">
+        <div class="cdb"><div class="cdnum" id="cdh">--</div><div class="cdunit">Hours</div></div>
+        <div class="cdsep">:</div>
+        <div class="cdb"><div class="cdnum" id="cdm">--</div><div class="cdunit">Mins</div></div>
+        <div class="cdsep">:</div>
+        <div class="cdb"><div class="cdnum" id="cds">--</div><div class="cdunit">Secs</div></div>
+      </div>
+      <div class="cdbottom">
+        <div class="cdtgt" id="cdtgt">Set booking date and time in sidebar to start countdown</div>
+        <div class="sbadge s-idle" id="sbadge"><div class="sbdot"></div><span id="sbtext">IDLE</span></div>
+      </div>
+    </div>
+
+    <div class="tlsec">
+      <div class="slabel" style="margin-bottom:11px">Bot Execution Plan</div>
+      <div class="timeline" id="tl"></div>
+    </div>
+
+    <div class="logsec">
+      <div class="loghdr">
+        <div class="logtitle">LIVE ACTIVITY LOG <span class="livebadge">LIVE</span></div>
+        <span style="font-family:var(--mono);font-size:.62rem;color:var(--t3)" id="lcnt">0 events</span>
+      </div>
+      <div class="logterm" id="lterm">
+        <div class="ll sys"><span class="lts">--:--:--</span><span class="llv">SYS</span><span class="lm">RailFast AutoBook Engine ready. Fill booking details and click ARM BOT.</span></div>
+      </div>
+    </div>
+
+    <div class="armbar">
+      <div class="armi">
+        <div class="armi-t" id="armt">Ready to Arm</div>
+        <div class="armi-s" id="arms">Fill all fields, then click ARM BOT. Keep this window open.</div>
+      </div>
+      <button class="btn bg bsm" onclick="testNow()">Test Now</button>
+      <button class="btn ba blg" id="armbtn" onclick="armBot()">ARM BOT</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="stl"><option value="NDLS"><option value="CSTM"><option value="BCT"><option value="HWH"><option value="MAS"><option value="SBC"><option value="PUNE"><option value="ADI"><option value="HYB"><option value="JP"><option value="LKO"><option value="NZM"><option value="BPL"><option value="VSKP"><option value="BBS"></datalist>
+
+<script>
+var px=[],pym='upi',armed=false,cdi=null,lc=0,sock=null,step=0;
+var STEPS=[{id:1,l:'Pre-login'},{id:2,l:'Navigate'},{id:3,l:'Select Train'},{id:4,l:'Fill Pax'},{id:5,l:'CAPTCHA'},{id:6,l:'Payment'},{id:7,l:'Confirm PNR'}];
+
+function initSock(){try{sock=io();sock.on('connect',function(){setConn(true);xlog('SYS','Connected to RailFast bot server.','sys')});sock.on('disconnect',function(){setConn(false);xlog('SYS','Disconnected.','err')});sock.on('bot_event',function(d){onEv(d)});sock.on('connect_error',function(){setConn(false)})}catch(e){setConn(false);xlog('SYS','Demo mode - start Flask server for real booking: python run_bot.py --dashboard','warn')}}
+function setConn(on){var d=document.getElementById('cdot'),t=document.getElementById('ctxt');d.className=on?'cdot on':'cdot';t.textContent=on?'CONNECTED':'OFFLINE'}
+function onEv(d){var lm={armed:'warn',pre_login:'warn',logged_in:'ok',booking_start:'warn',step:'info',success:'ok',error:'err',warning:'warn'};xlog(d.event.toUpperCase(),d.message,lm[d.event]||'info');if(d.event==='armed')setSt('armed','ARMED');else if(d.event==='pre_login'){setSt('run','PRE-LOGIN');adv(1)}else if(d.event==='logged_in')adv(1);else if(d.event==='booking_start'){setSt('run','BOOKING');adv(2)}else if(d.event==='step'){if(d.message.indexOf('Step 3')>-1)adv(3);else if(d.message.indexOf('Step 4')>-1)adv(4);else if(d.message.indexOf('Step 5')>-1)adv(5);else if(d.message.indexOf('Step 6')>-1)adv(6);else if(d.message.indexOf('Step 7')>-1)adv(7)}else if(d.event==='success'){setSt('run','BOOKED');var m=d.message.match(/\b\d{10}\b/);if(m)showSuc(m[0])}else if(d.event==='error'){setSt('err','ERROR');toast('error','Failed: '+d.message)}}
+function setSt(s,l){var b=document.getElementById('sbadge');b.className='sbadge s-'+(s==='run'?'run':s==='armed'?'armed':s==='err'?'err':'idle');document.getElementById('sbtext').textContent=l}
+function renderTL(){var tl=document.getElementById('tl');tl.innerHTML='';STEPS.forEach(function(st,i){var d=document.createElement('div');d.className='tlstep'+(i<step?' done':i===step&&armed?' act':'');d.innerHTML='<div class="tlcirc">'+(i<step?'OK':st.id)+'</div><div class="tllabel">'+st.l+'</div>';tl.appendChild(d);if(i<STEPS.length-1){var c=document.createElement('div');c.className='tlconn'+(i<step?' done':'');tl.appendChild(c)}})}
+function adv(to){step=to;renderTL()}
+function addPax(){if(px.length>=4){toast('warning','Max 4 passengers allowed.');return}px.push({id:Date.now()});renderPax();if(px.length>=4)document.getElementById('addpax').style.display='none'}
+function remPax(id){px=px.filter(function(p){return p.id!==id});renderPax();document.getElementById('addpax').style.display=''}
+function renderPax(){var el=document.getElementById('paxlist');el.innerHTML='';px.forEach(function(p,i){el.innerHTML+='<div class="pcard"><div class="pch"><span class="pnum">PAX '+(i+1)+'</span>'+(i>0?'<button class="prem" onclick="remPax('+p.id+')">Remove</button>':'')+'</div><div class="f"><label>Full Name (as in ID)</label><input type="text" id="pn'+p.id+'" placeholder="Legal full name"/></div><div class="fr3"><div class="f"><label>Age</label><input type="number" id="pa'+p.id+'" min="1" max="120"/></div><div class="f"><label>Gender</label><select id="pg'+p.id+'"><option value="M">Male</option><option value="F">Female</option><option value="T">Trans</option></select></div><div class="f"><label>Berth</label><select id="pb'+p.id+'"><option value="LB">LB</option><option value="MB">MB</option><option value="UB">UB</option><option value="SL">SL</option><option value="SU">SU</option><option value="">Any</option></select></div></div><div class="fr"><div class="f"><label>ID Type</label><select id="pt'+p.id+'"><option value="AADHAAR">Aadhaar</option><option value="PAN">PAN</option><option value="PASSPORT">Passport</option><option value="VOTER">Voter ID</option><option value="DRIVING">Driving Lic</option></select></div><div class="f"><label>ID Number</label><input type="text" id="pi'+p.id+'" placeholder="ID number"/></div></div></div>'})}
+function colPx(){return px.map(function(p){return{name:document.getElementById('pn'+p.id)?document.getElementById('pn'+p.id).value:'',age:document.getElementById('pa'+p.id)?document.getElementById('pa'+p.id).value:'',gender:document.getElementById('pg'+p.id)?document.getElementById('pg'+p.id).value:'M',berth_pref:document.getElementById('pb'+p.id)?document.getElementById('pb'+p.id).value:'LB',id_type:document.getElementById('pt'+p.id)?document.getElementById('pt'+p.id).value:'AADHAAR',id_number:document.getElementById('pi'+p.id)?document.getElementById('pi'+p.id).value:''}})}
+function setPay(m){pym=m;document.querySelectorAll('.ptab').forEach(function(t){t.classList.remove('on')});document.querySelectorAll('.pf').forEach(function(f){f.classList.remove('on')});document.getElementById('pt_'+m).classList.add('on');document.getElementById('pf_'+m).classList.add('on')}
+function fmtCard(el){var v=el.value.replace(/\D/g,'').substring(0,16);el.value=v.match(/.{1,4}/g)?v.match(/.{1,4}/g).join(' '):v}
+function colPay(){var b={method:pym};if(pym==='upi')b.upi_id=document.getElementById('upid').value;if(pym==='card'){b.card_number=document.getElementById('cnum').value.replace(/\s/g,'');b.card_expiry=document.getElementById('cexp').value;b.card_cvv=document.getElementById('ccvv').value;b.card_name=document.getElementById('cnm').value}if(pym==='nb')b.bank=document.getElementById('nbk').value;return b}
+function startCD(){if(cdi)clearInterval(cdi);updCD();cdi=setInterval(updCD,1000)}
+function updCD(){var bd=document.getElementById('bdate').value,hh=parseInt(document.getElementById('thh').value||10),mm=parseInt(document.getElementById('tmm').value||0),tgt=document.getElementById('cdtgt');if(!bd){['cdh','cdm','cds'].forEach(function(id){document.getElementById(id).textContent='--'});return}var target=new Date(bd+'T'+String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':00'),diff=Math.floor((target-new Date())/1000);if(diff<=0){['cdh','cdm','cds'].forEach(function(id){var el=document.getElementById(id);el.textContent='00';el.classList.add('urg')});tgt.innerHTML='<strong>WINDOW OPEN - Bot executing!</strong>';return}var H=Math.floor(diff/3600),M=Math.floor(diff%3600/60),S=diff%60;document.getElementById('cdh').textContent=String(H).padStart(2,'0');document.getElementById('cdm').textContent=String(M).padStart(2,'0');document.getElementById('cds').textContent=String(S).padStart(2,'0');['cdh','cdm','cds'].forEach(function(id){document.getElementById(id).classList.toggle('urg',diff<=30)});var fr=document.getElementById('from').value||'?',to=document.getElementById('to').value||'?',tn=document.getElementById('tnum').value||'?';tgt.innerHTML='<strong>'+fr+'</strong> to <strong>'+to+'</strong> | Train <strong>'+tn+'</strong> | Triggers at <strong style="color:var(--amber)">'+String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+'</strong>'}
+function buildPL(){var pl=colPx();if(!pl.length){toast('error','Add at least one passenger.');return null}var u=document.getElementById('usr').value,pw=document.getElementById('pwd').value;if(!u||!pw){toast('error','IRCTC credentials required.');return null}var td=document.getElementById('tdate').value;if(td){var p=td.split('-');td=p[2]+'/'+p[1]+'/'+p[0]}return{username:u,password:pw,mobile:document.getElementById('mob').value,from_station:document.getElementById('from').value,to_station:document.getElementById('to').value,travel_date:td,train_number:document.getElementById('tnum').value,train_class:document.getElementById('tcls').value,quota:document.getElementById('quot').value,booking_date:document.getElementById('bdate').value,trigger_hour:parseInt(document.getElementById('thh').value),trigger_minute:parseInt(document.getElementById('tmm').value),pre_login_secs:parseInt(document.getElementById('pls').value),passengers:pl,payment:colPay(),insurance:false}}
+async function armBot(){var pl=buildPL();if(!pl)return;var btn=document.getElementById('armbtn');btn.textContent='Arming...';btn.disabled=true;xlog('UI','Sending arm request...','info');try{var r=await fetch('/api/arm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pl)});var d=await r.json();if(d.success)onArmed(false);else{toast('error',d.error||'Failed to arm');btn.textContent='ARM BOT';btn.disabled=false}}catch(e){xlog('SYS','Demo mode active. Start Flask: python run_bot.py --dashboard','warn');onArmed(true);setTimeout(simDemo,4000)}}
+function onArmed(demo){armed=true;var btn=document.getElementById('armbtn');btn.textContent=demo?'ARMED (Demo)':'BOT ARMED';btn.className='btn bgrn blg';document.getElementById('disarmBtn').style.display='';document.getElementById('armt').textContent='Bot Armed - Countdown Active';document.getElementById('arms').textContent='Keep this window open. Do not close browser.';setSt('armed','ARMED');renderTL();toast('success','Bot armed successfully!');xlog('BOT','AutoBook bot armed. Waiting for trigger time...','ok');startCD()}
+function disarmBot(){try{fetch('/api/disarm',{method:'POST'})}catch(e){}armed=false;var btn=document.getElementById('armbtn');btn.textContent='ARM BOT';btn.className='btn ba blg';btn.disabled=false;document.getElementById('disarmBtn').style.display='none';document.getElementById('armt').textContent='Ready to Arm';document.getElementById('arms').textContent='Fill all fields, then click ARM BOT.';setSt('idle','IDLE');step=0;renderTL();xlog('SYS','Bot disarmed.','warn');toast('warning','Bot disarmed.')}
+async function testNow(){var pl=buildPL();if(!pl)return;xlog('UI','Running booking immediately...','warn');toast('warning','Running test booking...');try{var r=await fetch('/api/run_now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(pl)});var d=await r.json();if(d.success){setSt('run','RUNNING');renderTL()}else toast('error',d.error||'Failed')}catch(e){xlog('SYS','Demo simulation starting...','warn');simDemo(true)}}
+function simDemo(fast){var b=fast?400:1500;setSt('run','RUNNING');var evs=[{d:b,s:1,m:'Logging into IRCTC...',l:'warn'},{d:b+900,s:1,m:'CAPTCHA solved in 0.31s. Session active.',l:'ok'},{d:b+1800,s:2,m:'Navigating to train search page...',l:'info'},{d:b+2600,s:3,m:'Train found. Selecting class and quota...',l:'warn'},{d:b+3400,s:4,m:'Filling passenger details...',l:'info'},{d:b+4400,s:5,m:'Booking CAPTCHA solved in 0.28s.',l:'ok'},{d:b+5600,s:6,m:'Auto-payment via '+pym.toUpperCase()+'...',l:'warn'},{d:b+8000,s:7,m:'BOOKING CONFIRMED! PNR: 2812345678',l:'ok'}];evs.forEach(function(e){setTimeout(function(){xlog('BOT',e.m,e.l);adv(e.s);if(e.s===7)setTimeout(function(){showSuc('2812345678')},800)},e.d)})}
+function showSuc(pnr){document.getElementById('spnr').textContent=pnr;document.getElementById('scls').textContent=document.getElementById('tcls').value||'3A';var fr=document.getElementById('from').value,to=document.getElementById('to').value,tn=document.getElementById('tnum').value,dt=document.getElementById('tdate').value,cl=document.getElementById('tcls').value;document.getElementById('sdets').innerHTML='<div class="sdr"><span class="sdk">From</span><span class="sdv">'+fr+'</span></div><div class="sdr"><span class="sdk">To</span><span class="sdv">'+to+'</span></div><div class="sdr"><span class="sdk">Train</span><span class="sdv">'+tn+'</span></div><div class="sdr"><span class="sdk">Date</span><span class="sdv">'+dt+'</span></div><div class="sdr"><span class="sdk">Class</span><span class="sdv">'+cl+'</span></div><div class="sdr"><span class="sdk">PNR</span><span class="sdv" style="color:var(--green);font-family:var(--mono);font-weight:700">'+pnr+'</span></div>';document.getElementById('sov').classList.add('show');setSt('run','BOOKED');toast('success','PNR: '+pnr)}
+function resetBot(){document.getElementById('sov').classList.remove('show');disarmBot();step=0;renderTL()}
+function xlog(lvl,msg,type){lc++;document.getElementById('lcnt').textContent=lc+' events';var t=document.getElementById('lterm'),line=document.createElement('div');line.className='ll '+(type||'info');var now=new Date(),ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');line.innerHTML='<span class="lts">'+ts+'</span><span class="llv">'+lvl+'</span><span class="lm">'+msg+'</span>';t.appendChild(line);t.scrollTop=t.scrollHeight;while(t.children.length>500)t.removeChild(t.firstChild)}
+function clearLog(){document.getElementById('lterm').innerHTML='';lc=0;document.getElementById('lcnt').textContent='0 events'}
+function toast(type,msg){var c=document.getElementById('tc'),t=document.createElement('div');t.className='toast '+type;t.textContent=msg;c.appendChild(t);setTimeout(function(){t.remove()},4000)}
+(function(){var today=new Date(),tmr=new Date(today);tmr.setDate(today.getDate()+1);var fmt=function(d){return d.toISOString().split('T')[0]};document.getElementById('tdate').value=fmt(tmr);document.getElementById('bdate').value=fmt(today);addPax();renderTL();startCD();['bdate','thh','tmm','from','to','tnum'].forEach(function(id){var el=document.getElementById(id);if(el){el.addEventListener('input',updCD);el.addEventListener('change',updCD)}});initSock();xlog('SYS','Dashboard initialized. Configure booking and click ARM BOT.','sys')})();
+</script>
+</body>
+</html>

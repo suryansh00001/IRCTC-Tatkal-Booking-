@@ -1,0 +1,41 @@
+{
+  "_comment": "IRCTC Tatkal AutoBook — Sample Config. Copy to booking_config.json and fill in your values.",
+  "username": "YOUR_IRCTC_USERNAME",
+  "password": "YOUR_IRCTC_PASSWORD",
+  "mobile": "9XXXXXXXXX",
+  "from_station": "NDLS",
+  "to_station": "CSTM",
+  "travel_date": "25/12/2025",
+  "train_number": "12951",
+  "train_class": "3A",
+  "quota": "TQ",
+  "booking_date": "2025-12-24",
+  "trigger_hour": 10,
+  "trigger_minute": 0,
+  "pre_login_secs": 120,
+  "insurance": false,
+  "alt_quota": "GN",
+  "dry_run": true,
+  "passengers": [
+    {
+      "name": "Rahul Sharma",
+      "age": "28",
+      "gender": "M",
+      "berth_pref": "LB",
+      "id_type": "AADHAAR",
+      "id_number": "1234 5678 9012"
+    },
+    {
+      "name": "Priya Sharma",
+      "age": "25",
+      "gender": "F",
+      "berth_pref": "LB",
+      "id_type": "AADHAAR",
+      "id_number": "9876 5432 1098"
+    }
+  ],
+  "payment": {
+    "method": "upi",
+    "upi_id": "yourname@upi"
+  }
+}

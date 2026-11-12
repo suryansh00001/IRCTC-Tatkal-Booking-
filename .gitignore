@@ -1,0 +1,9 @@
+.env
+*.pyc
+__pycache__/
+irctc_profile/
+logs/*.log
+booking_config.json
+*.egg-info/
+dist/
+build/
