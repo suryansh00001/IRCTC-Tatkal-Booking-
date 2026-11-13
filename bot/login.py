@@ -125,39 +125,51 @@ def _do_login(driver, username, password, captcha_solver=None):
             )
             time.sleep(0.5)
 
-            # 4. Locate username and password inputs inside app-login
-            usr_input = WebDriverWait(driver, 8).until(
-                EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, "app-login input[formcontrolname='userid']")
+            # 4. Fill credentials rapidly via batch Angular JS injection
+            FAST_LOGIN_JS = """
+            var u = arguments[0];
+            var p = arguments[1];
+            var uIn = document.querySelector("app-login input[formcontrolname='userid'], input[placeholder*='User']");
+            var pIn = document.querySelector("app-login input[formcontrolname='password'], input[type='password']");
+            if (uIn && pIn) {
+                uIn.focus();
+                uIn.value = u;
+                uIn.dispatchEvent(new Event('input', {bubbles:true}));
+                uIn.dispatchEvent(new Event('change', {bubbles:true}));
+                pIn.focus();
+                pIn.value = p;
+                pIn.dispatchEvent(new Event('input', {bubbles:true}));
+                pIn.dispatchEvent(new Event('change', {bubbles:true}));
+                return true;
+            }
+            return false;
+            """
+            fast_filled = driver.execute_script(FAST_LOGIN_JS, username, password)
+            if fast_filled:
+                log.info("Credentials filled via fast JS injection.")
+            else:
+                usr_input = WebDriverWait(driver, 6).until(
+                    EC.visibility_of_element_located(
+                        (By.CSS_SELECTOR, "app-login input[formcontrolname='userid']")
+                    )
                 )
-            )
-            pwd_input = WebDriverWait(driver, 8).until(
-                EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, "app-login input[formcontrolname='password']")
+                pwd_input = WebDriverWait(driver, 6).until(
+                    EC.visibility_of_element_located(
+                        (By.CSS_SELECTOR, "app-login input[formcontrolname='password']")
+                    )
                 )
-            )
-
-            # Fill username with native send_keys and trigger Angular input events
-            usr_input.click()
-            time.sleep(0.1)
-            usr_input.clear()
-            usr_input.send_keys(username)
-            driver.execute_script(
-                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
-                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", usr_input
-            )
-            log.info(f"Entered username: {username}")
-
-            # Fill password
-            pwd_input.click()
-            time.sleep(0.1)
-            pwd_input.clear()
-            pwd_input.send_keys(password)
-            driver.execute_script(
-                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
-                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));", pwd_input
-            )
-            log.info("Entered password.")
+                usr_input.clear()
+                usr_input.send_keys(username)
+                pwd_input.clear()
+                pwd_input.send_keys(password)
+                driver.execute_script(
+                    "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));"
+                    "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));"
+                    "arguments[1].dispatchEvent(new Event('input', {bubbles:true}));"
+                    "arguments[1].dispatchEvent(new Event('change', {bubbles:true}));",
+                    usr_input, pwd_input
+                )
+                log.info("Credentials entered via fallback.")
 
             time.sleep(0.4)
 

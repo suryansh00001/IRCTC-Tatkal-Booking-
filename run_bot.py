@@ -270,11 +270,17 @@ def main():
             if job.dry_run:
                 print("🎉 SAFE DRY-RUN COMPLETED SUCCESSFULLY!")
                 print("   All forms, trains, and passenger inputs verified.")
+                print("   📱 Payment screen / QR code is open on your browser.")
                 print("   No ticket booked. No payment deducted.")
+                print(f"{'='*40}")
+                try:
+                    input("\n👉 Press Enter when you are done inspecting to close Chrome...")
+                except Exception:
+                    pass
             else:
                 print("🎉 BOOKING SUCCESSFUL!")
                 print(f"   PNR: {bot.result['pnr']}")
-            print(f"{'='*40}")
+                print(f"{'='*40}")
         else:
             print(f"\n❌ FAILED: {bot.result.get('error', 'Unknown error')}")
             print("   Please check IRCTC website manually.")

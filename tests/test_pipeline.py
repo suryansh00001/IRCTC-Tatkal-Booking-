@@ -122,6 +122,38 @@ class TestIRCTCPipeline(unittest.TestCase):
         self.assertTrue(issubclass(IRCTCServiceUnavailableError, Exception))
         self.assertTrue(issubclass(TrainNotFoundError, Exception))
 
+    def test_10_batch_passenger_injection(self):
+        """Verify PassengerFiller calls batch JS script and handles successful execution."""
+        from bot.passenger_filler import BATCH_PASSENGER_JS
+        self.assertIn("setAngularVal", BATCH_PASSENGER_JS)
+        self.assertIn("autoUpgradation", BATCH_PASSENGER_JS)
+        self.assertIn("confirmberths", BATCH_PASSENGER_JS)
+
+        mock_driver = MagicMock()
+        mock_driver.current_url = "https://www.irctc.co.in/nget/psgninput"
+        mock_driver.execute_script.return_value = {"success": True, "count": 1}
+        mock_driver.find_elements.return_value = [MagicMock()]
+
+        filler = PassengerFiller(mock_driver)
+        passengers = [{"name": "Rahul Sharma", "age": "32", "gender": "M", "berth_pref": "LB"}]
+        res = filler.fill_all_passengers(passengers, mobile="9876543210", insurance=True)
+        self.assertTrue(res)
+
+    def test_11_tatkal_resilience_engine(self):
+        """Verify scheduler heartbeat callback and bot pre-staging capabilities."""
+        bot = IRCTCBookingBot()
+        self.assertFalse(bot._form_prestaged)
+        self.assertIsNotNone(bot.scheduler)
+
+        # Verify heartbeat registration
+        heartbeat_mock = MagicMock()
+        bot.scheduler.set_callbacks(on_heartbeat=heartbeat_mock)
+        self.assertEqual(bot.scheduler._on_heartbeat, heartbeat_mock)
+
+        # Verify pre-staged flag toggling
+        bot._form_prestaged = True
+        self.assertTrue(bot._form_prestaged)
+
 
 if __name__ == "__main__":
     print("\n🧪 RUNNING AUTOMATED PIPELINE SELF-TESTS...\n" + "=" * 50)

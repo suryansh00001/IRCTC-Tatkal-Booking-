@@ -248,22 +248,26 @@ def check_search_errors_or_availability(driver):
 
 
 def _type_station(driver, field, code):
-    """Type station code and pick from modern PrimeNG autocomplete list."""
+    """Type station code and pick from modern PrimeNG autocomplete list rapidly."""
     _scroll_to(driver, field)
     driver.execute_script("arguments[0].click();", field)
-    time.sleep(0.2)
     field.clear()
     driver.execute_script("arguments[0].value='';", field)
 
-    for ch in code:
-        field.send_keys(ch)
-        time.sleep(0.08)
+    field.send_keys(code)
 
     # Trigger input event for Angular
     driver.execute_script(
         "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", field
     )
-    time.sleep(1.2)
+
+    # Reactively wait for autocomplete suggestions to render (typically 100-300ms)
+    try:
+        WebDriverWait(driver, 2.5).until(
+            lambda d: len(d.find_elements(By.CSS_SELECTOR, ".ui-autocomplete-items li, .ui-autocomplete-list li, li.ui-autocomplete-list-item")) > 0
+        )
+    except Exception:
+        pass
 
     # Pick matching suggestion (.ui-autocomplete-items li)
     for sel in [
@@ -282,13 +286,13 @@ def _type_station(driver, field, code):
                 sugg = suggs[0]
                 driver.execute_script("arguments[0].click();", sugg)
                 log.info(f"Station selected: {code}")
-                time.sleep(0.5)
+                time.sleep(0.2)
                 return
         except Exception:
             continue
 
     field.send_keys("\n")
-    time.sleep(0.5)
+    time.sleep(0.2)
 
 
 class TrainSearch:
@@ -495,7 +499,6 @@ class TrainSearch:
                     self.driver.execute_script("arguments[0].click();", el)
                     log.info(f"Class {travel_class} clicked")
                     clicked_class = True
-                    time.sleep(2.5)
                     break
             except Exception:
                 continue
@@ -503,85 +506,116 @@ class TrainSearch:
         if not clicked_class:
             raise Exception(f"Class {travel_class} button not found on train {train_number}")
 
+        # 1. Wait for IRCTC availability XHR to fetch and render the table
+        time.sleep(1.2)
+        try:
+            WebDriverWait(self.driver, 8).until(
+                lambda d: len(target_card.find_elements(By.CSS_SELECTOR, "table td.link.ng-star-inserted, table td.link")) > 0
+            )
+        except Exception:
+            pass
+
         handle_confirmation_dialogs(self.driver)
 
-        # 3b. Click the availability date slot to activate Book Now
+        # 2. Select availability date slot
         slots = target_card.find_elements(
             By.CSS_SELECTOR, "table td.link.ng-star-inserted, table td.link"
         )
-        slot_clicked = False
+        target_slot = None
         for s in slots:
             txt = s.text.strip().replace("\n", " ")
             if txt and "NOT AVAILABLE" not in txt.upper() and "TRAIN CANCELLED" not in txt.upper():
-                log.info(f"Selecting availability slot: {txt}")
-                _scroll_to(self.driver, s)
-                try:
-                    s.click()
-                except Exception:
-                    self.driver.execute_script("arguments[0].click();", s)
-                slot_clicked = True
-                time.sleep(1.5)
+                target_slot = s
+                log.info(f"Target availability slot: {txt}")
                 break
 
-        if not slot_clicked and slots:
-            for s in slots:
-                if s.text.strip():
-                    log.info(f"Selecting fallback slot: {s.text.strip().replace(chr(10), ' ')}")
-                    try:
-                        s.click()
-                    except Exception:
-                        self.driver.execute_script("arguments[0].click();", s)
-                    time.sleep(1.5)
+        if not target_slot and slots:
+            target_slot = slots[0]
+            log.info(f"Target fallback slot: {target_slot.text.strip().replace(chr(10), ' ')}")
+
+        if not target_slot:
+            err = check_search_errors_or_availability(self.driver)
+            if err:
+                raise IRCTCServiceUnavailableError(err)
+            raise Exception(f"No availability date slot found for class {travel_class} on train {train_number}")
+
+        _scroll_to(self.driver, target_slot)
+        try:
+            target_slot.click()
+        except Exception:
+            self.driver.execute_script("arguments[0].click();", target_slot)
+        log.info("Clicked availability slot.")
+
+        # 3. Wait reactively for Book Now button to be enabled (disable-book removed by Angular)
+        book_btn = None
+        start_wait = time.time()
+        while time.time() - start_wait < 5.0:
+            btns = target_card.find_elements(
+                By.CSS_SELECTOR, "button.train_Search, button.btnDefault.train_Search, button.btnDefault"
+            )
+            for b in btns:
+                classes = b.get_attribute("class") or ""
+                if "disable-book" not in classes and b.is_displayed():
+                    book_btn = b
+                    log.info(f"Book Now button active and ready (class: '{classes}')")
                     break
-
-        handle_confirmation_dialogs(self.driver)
-
-        # Check for error dialogs after selecting slot (e.g. Quota not applicable, Regret, etc.)
-        err = check_search_errors_or_availability(self.driver)
-        if err:
-            log.warning(f"Notice after class/slot selection: {err}")
+            if book_btn:
+                break
+            time.sleep(0.2)
+            # Re-click slot if still disabled after 1.5s
+            if not book_btn and target_slot and (time.time() - start_wait > 1.5):
+                try:
+                    self.driver.execute_script("arguments[0].click();", target_slot)
+                except Exception:
+                    pass
 
         # 4. Click Book Now button
         book_now_clicked = False
-        for sel in [
-            "button.btnDefault.train_Search",
-            "button.train_Search",
-            "button.btnDefault",
-            "//button[contains(text(),'Book Now') or normalize-space()='Book Now']",
-            "//button[contains(.,'Book Now')]",
-        ]:
+        if book_btn:
+            _scroll_to(self.driver, book_btn)
             try:
-                btns = target_card.find_elements(
-                    By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel
-                )
-                for btn in btns:
-                    if btn.is_displayed():
-                        _scroll_to(self.driver, btn)
-                        self.driver.execute_script("arguments[0].click();", btn)
-                        log.info("Book Now clicked")
-                        book_now_clicked = True
-                        time.sleep(2)
-                        handle_confirmation_dialogs(self.driver)
-                        break
-                if book_now_clicked:
-                    break
+                book_btn.click()
             except Exception:
-                continue
+                self.driver.execute_script("arguments[0].click();", book_btn)
+            book_now_clicked = True
+            log.info("Book Now button clicked!")
+            time.sleep(0.8)
+            handle_confirmation_dialogs(self.driver)
+        else:
+            # Direct JS fallback: remove disable-book class and click
+            log.warning("Book Now button still in disable-book state — attempting force JS click...")
+            for b in target_card.find_elements(By.CSS_SELECTOR, "button.train_Search, button.btnDefault"):
+                if b.is_displayed():
+                    self.driver.execute_script("arguments[0].classList.remove('disable-book'); arguments[0].click();", b)
+                    book_now_clicked = True
+                    log.info("Force clicked Book Now button via JS.")
+                    time.sleep(0.8)
+                    handle_confirmation_dialogs(self.driver)
+                    break
 
         if not book_now_clicked:
             raise Exception("Book Now button could not be clicked.")
 
-        # Wait for transition to passenger page
-        try:
-            WebDriverWait(self.driver, 15).until(
-                lambda d: "train-list" not in d.current_url or
-                          len(d.find_elements(By.CSS_SELECTOR, "app-passenger-input, app-passenger")) > 0
-            )
-            log.info("Navigated to passenger details stage")
-        except Exception:
+        # 5. Verify navigation to passenger page reactively
+        navigated = False
+        start_nav = time.time()
+        while time.time() - start_nav < 12.0:
+            curr_url = self.driver.current_url or ""
+            if "psgninput" in curr_url or "passenger" in curr_url:
+                navigated = True
+                break
+            if len(self.driver.find_elements(By.CSS_SELECTOR, "app-passenger-input, app-passenger, #mobileNumber")) > 0:
+                navigated = True
+                break
+            # Dismiss any popup confirmation dialogs (e.g. station change prompt, senior citizen warning)
+            handle_confirmation_dialogs(self.driver)
+            time.sleep(0.4)
+
+        if not navigated:
             err = check_search_errors_or_availability(self.driver)
             if err:
                 raise IRCTCServiceUnavailableError(err)
-            log.warning("Waiting for passenger form...")
+            raise Exception(f"Failed to navigate to passenger details page (Current URL: {self.driver.current_url})")
 
+        log.info(f"Navigated to passenger details stage ({self.driver.current_url})")
         return True

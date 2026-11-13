@@ -29,13 +29,15 @@ class TatkalScheduler:
         self._stop_event = threading.Event()
         self._on_prelogin = None
         self._on_booking_trigger = None
+        self._on_heartbeat = None
         self.status_callback = None
 
-    def set_callbacks(self, on_prelogin=None, on_trigger=None, on_status=None):
+    def set_callbacks(self, on_prelogin=None, on_trigger=None, on_status=None, on_heartbeat=None):
         """Register callbacks for scheduler events."""
         self._on_prelogin = on_prelogin
         self._on_booking_trigger = on_trigger
         self.status_callback = on_status
+        self._on_heartbeat = on_heartbeat
 
     def get_tatkal_open_time(self, train_class: str,
                               booking_date: datetime.date) -> datetime.datetime:
@@ -92,18 +94,30 @@ class TatkalScheduler:
             except Exception as e:
                 log.error(f"Pre-login callback error: {e}")
 
-        # ── Phase 3: Precision wait to booking second ──
+        # ── Phase 3: Precision wait to booking second with Active Session Heartbeat ──
         secs_to_booking = (booking_datetime - datetime.datetime.now()).total_seconds()
-        log.info(f"Precision waiting {secs_to_booking:.3f}s to booking trigger...")
+        log.info(f"⚡ Armed and waiting ({secs_to_booking:.1f}s to booking trigger)...")
 
-        if secs_to_booking > 0:
-            # High-precision sleep using busy-wait in last 0.5s
-            if secs_to_booking > 1:
-                time.sleep(secs_to_booking - 0.5)
+        last_hb_sec = 0
+        while True:
+            remaining = (booking_datetime - datetime.datetime.now()).total_seconds()
+            if remaining <= 1.0 or self._stop_event.is_set():
+                break
 
-            # Busy-wait last 0.5 seconds for maximum precision
-            while datetime.datetime.now() < booking_datetime:
-                time.sleep(0.001)
+            rem_int = int(remaining)
+            # Run active session heartbeat roughly every 20s
+            if self._on_heartbeat and (rem_int % 20 == 0) and (rem_int != last_hb_sec):
+                last_hb_sec = rem_int
+                try:
+                    self._on_heartbeat(remaining)
+                except Exception as e:
+                    log.warning(f"Session heartbeat callback error: {e}")
+
+            time.sleep(min(0.5, max(0.01, remaining - 1.0)))
+
+        # Sub-second busy-wait loop for exact 10:00:00.000 trigger
+        while datetime.datetime.now() < booking_datetime:
+            time.sleep(0.001)
 
         # ── Phase 4: TRIGGER ──
         actual_time = datetime.datetime.now()

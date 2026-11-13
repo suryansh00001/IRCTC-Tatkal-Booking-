@@ -36,9 +36,12 @@ class PaymentHandler:
             self._wait_for_payment_page()
 
             if self.dry_run:
-                log.info("🛡️ [DRY RUN ACTIVE] Selecting payment gateway on screen without placing actual payment.")
+                log.info("🛡️ [DRY RUN ACTIVE] Opening payment gateway to load QR Code on screen...")
                 self._select_modern_payment_category(method)
-                log.info("✅ [DRY RUN] Payment gateway successfully targeted. Stopping before actual charge!")
+                self._select_provider(["BHIM", "PAYTM", "RAZORPAY", "PHONEPE", "IPAY", "AIRPAY"])
+                self._click_pay_and_book_button()
+                log.info("📱 QR Code / Payment Gateway loaded on screen!")
+                log.info("🛡️ [DRY RUN] Gateway verified. To book, scan the QR with any UPI app; otherwise let it expire safely.")
                 return True
 
             dispatch = {
@@ -84,7 +87,7 @@ class PaymentHandler:
                     self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", cat)
                     self.driver.execute_script("arguments[0].click();", cat)
                     log.info(f"Selected payment category: {cat.text.strip()}")
-                    time.sleep(1)
+                    time.sleep(0.2)
                     return True
 
         # Fallback to general label search
@@ -239,14 +242,14 @@ class PaymentHandler:
             return ""
 
     def _wait_for_payment_page(self):
-        """Wait for payment options page to load."""
-        for _ in range(15):
-            if any(term in self.driver.current_url for term in ["payment", "review"]):
+        """Wait for payment options page to load reactively."""
+        for _ in range(25):
+            curr = self.driver.current_url or ""
+            if "payment" in curr and "review" not in curr:
                 break
-            if len(self.driver.find_elements(By.CSS_SELECTOR, "app-payment-options, #pay-type")) > 0:
+            if len(self.driver.find_elements(By.CSS_SELECTOR, "app-payment-options, #pay-type, .bank-type")) > 0:
                 break
-            time.sleep(1)
-        time.sleep(1)
+            time.sleep(0.2)
 
     def _click_payment_option(self, labels: list):
         for label in labels:

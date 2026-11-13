@@ -36,9 +36,9 @@ TATKAL_AC_HOUR       = 10    # AC classes: 10:00 AM
 TATKAL_AC_MINUTE     = 0
 TATKAL_NON_AC_HOUR   = 11   # Non-AC: 11:00 AM
 TATKAL_NON_AC_MINUTE = 0
-FORM_FILL_DELAY      = 0.05  # Delay between keystrokes (seconds)
-CLICK_DELAY          = 0.1
-POST_SUBMIT_WAIT     = 8
+FORM_FILL_DELAY      = 0.01  # Ultra-fast delay between keystrokes (seconds)
+CLICK_DELAY          = 0.05
+POST_SUBMIT_WAIT     = 0.5   # Reduced from 8s to reactive sub-second wait
 
 # ── Retry Settings ──
 MAX_RETRIES          = 3
